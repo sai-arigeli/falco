@@ -20,8 +20,8 @@ file(MAKE_DIRECTORY ${FALCOSECURITY_LIBS_CMAKE_WORKING_DIR})
 # default below In case you want to test against another falcosecurity/libs version just pass the variable - ie., `cmake
 # -DFALCOSECURITY_LIBS_VERSION=dev ..`
 if(NOT FALCOSECURITY_LIBS_VERSION)
-  set(FALCOSECURITY_LIBS_VERSION "a03ccfda795f2ba711b80f69cb06869f2b63121b")
-  set(FALCOSECURITY_LIBS_CHECKSUM "SHA256=97ce5c30b985b77e1abb04ef7037c69be176cbe2122acf67a7f6ec6b39dbdc27")
+  set(FALCOSECURITY_LIBS_VERSION "b9d2fccebf0feb94729c78bee0368c70d9c24819")
+  set(FALCOSECURITY_LIBS_CHECKSUM "SHA256=ea377568c7b59f8cb2ddfca685cc59fa526b3c853fa520fb843736f8dbe9f583")
 endif()
 
 # cd /path/to/build && cmake /path/to/source
