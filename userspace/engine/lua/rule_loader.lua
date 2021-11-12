@@ -437,6 +437,29 @@ function load_rules_doc(rules_mgr, doc, load_state)
 	    return false, build_error_with_context(v['context'], "Rules require engine version "..v['required_engine_version']..", but engine version is "..falco_rules.engine_version(rules_mgr)), warnings
 	 end
 
+      elseif (v['required_plugin_versions']) then
+
+	 for _, vobj in ipairs(v['required_plugin_versions']) do
+	    if vobj['name'] == nil then
+	       return false, build_error_with_context(v['context'], "required_plugin_versions item must have name property"), warnings
+	    end
+
+	    if vobj['version'] == nil then
+	       return false, build_error_with_context(v['context'], "required_plugin_versions item must have version property"), warnings
+	    end
+
+	    -- In the rules yaml, it's a name + version. But it's
+	    -- possible, although unlikely, that a single yaml blob
+	    -- contains multiple docs, withe each doc having its own
+	    -- required_engine_version entry. So populate a map plugin
+	    -- name -> list of required plugin versions.
+	    if load_state.required_plugin_versions[vobj['name']] == nil then
+	       load_state.required_plugin_versions[vobj['name']] = {}
+	    end
+
+	    table.insert(load_state.required_plugin_versions[vobj['name']], vobj['version'])
+	 end
+
       elseif (v['macro']) then
 
 	 if (v['macro'] == nil or type(v['macro']) == "table") then
@@ -814,6 +837,7 @@ end
 -- Returns:
 -- - Load Result: bool
 -- - required engine version. will be nil when load result is false
+-- - required_plugin_versions. will be nil when load_result is false
 -- - List of Errors
 -- - List of Warnings
 function load_rules(rules_content,
@@ -826,7 +850,7 @@ function load_rules(rules_content,
 
    local warnings = {}
 
-   local load_state = {lines={}, indices={}, cur_item_idx=0, min_priority=min_priority, required_engine_version=0}
+   local load_state = {lines={}, indices={}, cur_item_idx=0, min_priority=min_priority, required_engine_version=0, required_plugin_versions={}}
 
    load_state.lines, load_state.indices = split_lines(rules_content)
 
@@ -847,29 +871,29 @@ function load_rules(rules_content,
       row = tonumber(row)
       col = tonumber(col)
 
-      return false, nil, build_error(load_state.lines, row, 3, docs), warnings
+      return false, nil, nil, build_error(load_state.lines, row, 3, docs), warnings
    end
 
    if docs == nil then
       -- An empty rules file is acceptable
-      return true, load_state.required_engine_version, {}, warnings
+      return true, load_state.required_engine_version, {}, {}, warnings
    end
 
    if type(docs) ~= "table" then
-      return false, nil, build_error(load_state.lines, 1, 1, "Rules content is not yaml"), warnings
+      return false, nil, nil, build_error(load_state.lines, 1, 1, "Rules content is not yaml"), warnings
    end
 
    for docidx, doc in ipairs(docs) do
 
       if type(doc) ~= "table" then
-	 return false, nil, build_error(load_state.lines, 1, 1, "Rules content is not yaml"), warnings
+	 return false, nil, nil, build_error(load_state.lines, 1, 1, "Rules content is not yaml"), warnings
       end
 
       -- Look for non-numeric indices--implies that document is not array
       -- of objects.
       for key, val in pairs(doc) do
 	 if type(key) ~= "number" then
-	    return false, nil, build_error(load_state.lines, 1, 1, "Rules content is not yaml array of objects"), warnings
+	    return false, nil, nil, build_error(load_state.lines, 1, 1, "Rules content is not yaml array of objects"), warnings
 	 end
       end
 
@@ -882,7 +906,7 @@ function load_rules(rules_content,
       end
 
       if not res then
-	 return res, nil, errors, warnings
+	 return res, nil, nil, errors, warnings
       end
    end
 
@@ -923,7 +947,7 @@ function load_rules(rules_content,
       local status, ast = compiler.compile_macro(v['condition'], state.macros, state.lists)
 
       if status == false then
-	 return false, nil, build_error_with_context(v['context'], ast), warnings
+	 return false, nil, nil, build_error_with_context(v['context'], ast), warnings
       end
 
       state.macros[v['macro']] = {["ast"] = ast.filter.value, ["used"] = false}
@@ -949,7 +973,7 @@ function load_rules(rules_content,
 	 end
 
 	 if err ~= nil then
-	    return false, nil, build_error_with_context(v['context'], err), warnings
+	    return false, nil, nil, build_error_with_context(v['context'], err), warnings
 	 end
 
 	 if icond ~= "" then
@@ -974,10 +998,19 @@ function load_rules(rules_content,
 							 state.macros, state.lists)
 
       if status == false then
-	 return false, nil, build_error_with_context(v['context'], filter_ast), warnings
+	 return false, nil, nil, build_error_with_context(v['context'], filter_ast), warnings
       end
 
       if (filter_ast.type == "Rule") then
+
+	 valid = falco_rules.is_source_valid(rules_mgr, v['source'])
+
+	 if valid == false then
+	    msg = "Rule "..v['rule']..": warning (unknown-source): unknown source "..v['source']..", skipping"
+	    warnings[#warnings + 1] = msg
+	    goto next_rule
+	 end
+
 	 state.n_rules = state.n_rules + 1
 
 	 state.rules_by_idx[state.n_rules] = v
@@ -1005,7 +1038,7 @@ function load_rules(rules_content,
 	       warnings[#warnings + 1] = msg
 	    else
 	       msg = "Rule "..v['rule']..": error "..err
-	       return false, nil, build_error_with_context(v['context'], msg), warnings
+	       return false, nil, nil, build_error_with_context(v['context'], msg), warnings
 	    end
 
 	 else
@@ -1068,10 +1101,10 @@ function load_rules(rules_content,
 	 -- up to the top level.
 	 local err = falco_rules.is_format_valid(rules_mgr, v['source'], v['output'])
 	 if err ~= nil then
-	    return false, nil, build_error_with_context(v['context'], err), warnings
+	    return false, nil, nil, build_error_with_context(v['context'], err), warnings
 	 end
       else
-	 return false, nil, build_error_with_context(v['context'], "Unexpected type in load_rule: "..filter_ast.type), warnings
+	 return false, nil, nil, build_error_with_context(v['context'], "Unexpected type in load_rule: "..filter_ast.type), warnings
       end
 
       ::next_rule::
@@ -1094,7 +1127,7 @@ function load_rules(rules_content,
 
    io.flush()
 
-   return true, load_state.required_engine_version, {}, warnings
+   return true, load_state.required_engine_version, load_state.required_plugin_versions, {}, warnings
 end
 
 local rule_fmt = "%-50s %s"

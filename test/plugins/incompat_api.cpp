@@ -14,12 +14,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// The version of rules/filter fields/etc supported by this Falco
-// engine.
-#define FALCO_ENGINE_VERSION (10)
+#include <string.h>
+#include <stdlib.h>
 
-// This is the result of running "falco --list -N | sha256sum" and
-// represents the fields supported by this version of Falco. It's used
-// at build time to detect a changed set of fields.
-#define FALCO_FIELDS_CHECKSUM "64c449b28013e400cd4d67c993a253752199d749f820c90c4314946c999c5a9f"
+// Don't need any function other than plugin_get_required_api_version,
+// plugin load will fail after that.
+static const char *pl_required_api_version = "10000000.0.0";
 
+extern "C"
+const char* plugin_get_required_api_version()
+{
+	return pl_required_api_version;
+}
